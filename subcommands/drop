@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+source "$(dirname "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)")/config"
+set -eo pipefail; [[ $DOKKU_TRACE ]] && set -x
+source "$PLUGIN_BASE_PATH/common/functions"
+source "$(dirname "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)")/functions"
+
+mysql-drop-cmd() {
+  declare desc="extend the $PLUGIN_SERVICE with additional database"
+  local cmd="$PLUGIN_COMMAND_PREFIX:drop" argv=("$@"); [[ ${argv[0]} == "$cmd" ]] && shift 1
+  declare SERVICE="$1" DATABASE="$2"
+  local SERVICE_ROOT="$PLUGIN_DATA_ROOT/$SERVICE"
+  local DB_LINKS_FILE="$SERVICE_ROOT/dbs/$DATABASE/LINKS"
+  [[ -d "$SERVICE_ROOT/dbs/$DATABASE" ]] || dokku_log_fail "$PLUGIN_SERVICE service $SERVICE has no database $DATABASE configured"
+  [[ -z "$SERVICE" ]] && dokku_log_fail "Please specify a name for the service"
+  [[ -z "$DATABASE" ]] && dokku_log_fail "Please specify a database name"
+  [[ -s "$DB_LINKS_FILE" ]] && dokku_log_fail "Cannot drop linked database"
+  verify_service_name "$SERVICE"
+  service_drop_db "$SERVICE" "$DATABASE"
+}
+
+mysql-drop-cmd "$@"

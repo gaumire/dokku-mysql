@@ -7,14 +7,15 @@ source "$(dirname "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)")/functions"
 mysql-link-cmd() {
   declare desc="link the $PLUGIN_SERVICE service to the app"
   local cmd="$PLUGIN_COMMAND_PREFIX:link" argv=("$@"); [[ ${argv[0]} == "$cmd" ]] && shift 1
-  declare SERVICE="$1" APP="$2"
+  declare SERVICE="$1" APP="$2" DATABASE="$3"
   APP=${APP:="$DOKKU_APP_NAME"}
 
   [[ -z "$SERVICE" ]] && dokku_log_fail "Please specify a name for the service"
   [[ -z "$APP" ]] && dokku_log_fail "Please specify an app to run the command on"
+  [[ -z "$DATABASE" ]] && dokku_log_fail "Please specify a database name on service"
   verify_app_name "$APP"
   verify_service_name "$SERVICE"
-  service_link "$SERVICE" "$APP"
+  service_link "$SERVICE" "$APP" "$DATABASE"
 }
 
 mysql-link-cmd "$@"

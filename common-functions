@@ -67,14 +67,18 @@ is_container_status() {
 
 remove_from_links_file() {
   declare desc="Removes an app from the service link file"
-  declare SERVICE="$1" APP="$2"
+  declare SERVICE="$1" APP="$2" DATABASE="$3"
   local SERVICE_ROOT="$PLUGIN_DATA_ROOT/$SERVICE"
   local LINKS_FILE="$SERVICE_ROOT/LINKS"
+  local DB_LINKS_FILE="$SERVICE_ROOT/dbs/$DATABASE/LINKS"
 
   mkdir -p "$SERVICE_ROOT" || dokku_log_fail "Unable to create service directory"
   touch "$LINKS_FILE"
+  touch "$DB_LINKS_FILE"
   sed -i.bak "/^$APP\$/d" "$LINKS_FILE" && rm "$LINKS_FILE.bak"
+  sed -i.bak "/^$APP\$/d" "$DB_LINKS_FILE" && rm "$DB_LINKS_FILE.bak"
   sort "$LINKS_FILE" -u -o "$LINKS_FILE"
+  sort "$DB_LINKS_FILE" -u -o "$DB_LINKS_FILE"
 }
 
 service_alias() {
@@ -133,15 +137,13 @@ service_info() {
   declare desc="Retrieves information about a given service"
   declare SERVICE="$1" INFO_FLAG="$2"
   local SERVICE_ROOT="$PLUGIN_DATA_ROOT/$SERVICE"
-  local SERVICE_URL=$(service_url "$SERVICE")
   local PORT_FILE="$SERVICE_ROOT/PORT"
   local SERVICE_CONTAINER_ID="$(cat "$SERVICE_ROOT/ID")"
   local flag key valid_flags
 
   local flag_map=(
     "--config-dir: ${SERVICE_ROOT}/config"
-    "--data-dir: ${SERVICE_ROOT}/data"
-    "--dsn: ${SERVICE_URL}"
+    "--data-dir: ${SERVICE_ROOT}/data"  
     "--exposed-ports: $(service_exposed_ports "$SERVICE")"
     "--id: ${SERVICE_CONTAINER_ID}"
     "--internal-ip: $(get_container_ip "${SERVICE_CONTAINER_ID}")"
@@ -155,6 +157,14 @@ service_info() {
     for flag in "${flag_map[@]}"; do
       key="$(echo "${flag#--}" | cut -f1 -d' ' | tr - ' ')"
       dokku_log_verbose "$(printf "%-20s %-25s" "${key^}" "${flag#*: }")"
+    done
+    local DATABASES="$(ls -lAh $SERVICE_ROOT/dbs/ | grep '^d' | awk '{print $9}')"
+    local SERVICE_ALIAS="$(service_alias "$SERVICE")"
+    for DB in $DATABASES; do
+      local PASSWORD="$(cat "$SERVICE_ROOT/dbs/$DB/PASSWORD")"
+      local USER="$(cat "$SERVICE_ROOT/dbs/$DB/USER")"
+      local SERVICE_URL=$(service_url "$SERVICE" "$DB")
+      dokku_log_verbose "$(printf "%-20s %-25s" "DSN ($DB)" "$SERVICE_URL")"
     done
   else
     local match=false
@@ -170,9 +180,9 @@ service_info() {
 
 service_link() {
   declare desc="Links a service to an application"
-  declare SERVICE="$1" APP="$2"
+  declare SERVICE="$1" APP="$2" DATABASE="$3"
   update_plugin_scheme_for_app "$APP"
-  local SERVICE_URL=$(service_url "$SERVICE")
+  local SERVICE_URL=$(service_url "$SERVICE" "$DATABASE")
   local SERVICE_NAME="$(get_service_name "$SERVICE")"
   local SERVICE_ROOT="$PLUGIN_DATA_ROOT/$SERVICE"
   local EXISTING_CONFIG=$(config_all "$APP")
@@ -180,12 +190,16 @@ service_link() {
   local DEFAULT_ALIAS=$(echo "$EXISTING_CONFIG" | grep "${PLUGIN_DEFAULT_ALIAS}_URL") || true
   local SERVICE_ALIAS=$(service_alias "$SERVICE")
   local LINKS_FILE="$SERVICE_ROOT/LINKS"
+  local DB_LINKS_FILE="$SERVICE_ROOT/dbs/$DATABASE/LINKS"
 
   [[ -n $LINK ]] && dokku_log_fail "Already linked as $LINK"
   mkdir -p "$SERVICE_ROOT" || dokku_log_fail "Unable to create service directory"
   touch "$LINKS_FILE"
+  touch "$DB_LINKS_FILE"
   echo "$APP" >> "$LINKS_FILE"
+  echo "$APP" >> "$DB_LINKS_FILE"
   sort "$LINKS_FILE" -u -o "$LINKS_FILE"
+  sort "$DB_LINKS_FILE" -u -o "$DB_LINKS_FILE"
 
   local ALIAS="$PLUGIN_DEFAULT_ALIAS"
   if [[ -n $DEFAULT_ALIAS ]]; then
@@ -312,11 +326,11 @@ service_port_unpause() {
 
 service_promote() {
   declare desc="Promotes a secondary service to the primary env var"
-  declare SERVICE="$1" APP="$2"
+  declare SERVICE="$1" APP="$2" DATABASE="$3"
   local PLUGIN_DEFAULT_CONFIG_VAR="${PLUGIN_DEFAULT_ALIAS}_URL"
   local EXISTING_CONFIG=$(config_all "$APP")
   update_plugin_scheme_for_app "$APP"
-  local SERVICE_URL=$(service_url "$SERVICE")
+  local SERVICE_URL=$(service_url "$SERVICE" "$DATABASE")
   local CONFIG_VARS=($(echo "$EXISTING_CONFIG" | grep "$SERVICE_URL" | cut -d: -f1)) || true
   local PREVIOUS_DEFAULT_URL=$(get_url_from_config "$EXISTING_CONFIG" "$PLUGIN_DEFAULT_CONFIG_VAR")
 
@@ -383,16 +397,16 @@ service_stop() {
 
 service_unlink() {
   declare desc="Unlinks an application from a service"
-  declare SERVICE="$1" APP="$2"
+  declare SERVICE="$1" APP="$2" DATABASE="$3"
   update_plugin_scheme_for_app "$APP"
-  local SERVICE_URL=$(service_url "$SERVICE")
+  local SERVICE_URL=$(service_url "$SERVICE" "$DATABASE")
   local SERVICE_NAME="$(get_service_name "$SERVICE")"
   local EXISTING_CONFIG=$(config_all "$APP")
   local SERVICE_ALIAS=$(service_alias "$SERVICE")
   local LINK=($(echo "$EXISTING_CONFIG" | grep "$SERVICE_URL" | cut -d: -f1)) || true
 
   [[ -z ${LINK[*]} ]] && dokku_log_fail "Not linked to app $APP"
-  remove_from_links_file "$SERVICE" "$APP"
+  remove_from_links_file "$SERVICE" "$APP" "$DATABASE"
 
   if declare -f -F add_passed_docker_option > /dev/null; then
     # shellcheck disable=SC2034

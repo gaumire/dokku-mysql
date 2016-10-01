@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+source "$(dirname "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)")/config"
+set -eo pipefail; [[ $DOKKU_TRACE ]] && set -x
+source "$PLUGIN_BASE_PATH/common/functions"
+source "$(dirname "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)")/functions"
+
+mysql-extend-cmd() {
+  declare desc="extend the $PLUGIN_SERVICE with additional database"
+  local cmd="$PLUGIN_COMMAND_PREFIX:extend" argv=("$@"); [[ ${argv[0]} == "$cmd" ]] && shift 1
+  declare SERVICE="$1" DATABASE="$2"
+
+  [[ -z "$SERVICE" ]] && dokku_log_fail "Please specify a name for the service"
+  [[ -z "$DATABASE" ]] && dokku_log_fail "Please specify a database name"
+  verify_service_name "$SERVICE"
+  service_extend "$SERVICE" "$DATABASE"
+}
+
+mysql-extend-cmd "$@"
